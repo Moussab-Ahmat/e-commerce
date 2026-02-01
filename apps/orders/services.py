@@ -153,8 +153,22 @@ class OrderService:
         order.delivery_fee = delivery_fee
         order.total = subtotal + delivery_fee
         order.save(update_fields=['subtotal', 'delivery_fee', 'total'])
-        
+
         result['order'] = order
+
+        # Send push notification to client (async to not block order creation)
+        try:
+            from apps.notifications.push import send_push_notification
+            send_push_notification(
+                user_id=user.id,
+                title='Commande confirmee',
+                body=f'Votre commande #{order.order_number} a ete confirmee. Montant: {order.total} FCFA',
+                notification_type='order_confirmed',
+                data={'type': 'order_confirmed', 'order_id': str(order.id)},
+            )
+        except Exception:
+            pass  # Don't fail order creation if notification fails
+
         return result
     
     @staticmethod
@@ -208,10 +222,38 @@ class OrderService:
         try:
             order.transition_status(Order.Status.CANCELLED, user=user)
             result['order'] = order
+
+            # Notify client
+            try:
+                from apps.notifications.push import send_push_notification
+                send_push_notification(
+                    user_id=order.user_id,
+                    title='Commande annulee',
+                    body=f'Votre commande #{order.order_number} a ete annulee.',
+                    notification_type='order_cancelled',
+                    data={'type': 'order_cancelled', 'order_id': str(order.id)},
+                )
+            except Exception:
+                pass
+
+            # Notify courier if assigned
+            if order.courier_id:
+                try:
+                    from apps.notifications.push import send_push_notification
+                    send_push_notification(
+                        user_id=order.courier_id,
+                        title='Livraison annulee',
+                        body=f'La commande #{order.order_number} a ete annulee.',
+                        notification_type='delivery_cancelled',
+                        data={'type': 'delivery_cancelled', 'order_id': str(order.id)},
+                    )
+                except Exception:
+                    pass
+
         except Exception as e:
             result['success'] = False
             result['errors'].append(str(e))
-        
+
         return result
     
     @staticmethod
@@ -283,10 +325,24 @@ class OrderService:
         try:
             order.transition_status(Order.Status.CONFIRMED, user=user)
             result['order'] = order
+
+            # Notify client that order is confirmed
+            try:
+                from apps.notifications.push import send_push_notification
+                send_push_notification(
+                    user_id=order.user_id,
+                    title='Commande confirmee',
+                    body=f'Votre commande #{order.order_number} a ete confirmee et est en preparation.',
+                    notification_type='order_confirmed',
+                    data={'type': 'order_confirmed', 'order_id': str(order.id)},
+                )
+            except Exception:
+                pass
+
         except InvalidOrderStatusError as e:
             result['success'] = False
             result['errors'].append(str(e))
             # Release reservation if status transition fails
             InventoryService.release(order_items, reference=order.order_number)
-        
+
         return result

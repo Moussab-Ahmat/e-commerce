@@ -23,6 +23,7 @@ urlpatterns = [
     path('api/v1/courier/', include('apps.courier.urls')),
     path('api/v1/notifications/', include('apps.notifications.urls')),
     path('api/v1/admin/', include('apps.admin_api.urls')),
+    path('api/v1/admin/', include('apps.reports.urls')),
     path('api/v1/courier-dashboard/', include('apps.courier_api.urls')),
 ]
 

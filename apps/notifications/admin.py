@@ -2,7 +2,7 @@
 Admin configuration for notifications app.
 """
 from django.contrib import admin
-from .models import NotificationLog
+from .models import NotificationLog, PushNotification
 
 
 @admin.register(NotificationLog)
@@ -33,3 +33,16 @@ class NotificationLogAdmin(admin.ModelAdmin):
             'fields': ('created_at', 'sent_at', 'updated_at')
         }),
     )
+
+
+@admin.register(PushNotification)
+class PushNotificationAdmin(admin.ModelAdmin):
+    """Admin interface for PushNotification model."""
+    list_display = (
+        'id', 'user', 'notification_type', 'title',
+        'is_read', 'is_sent', 'created_at'
+    )
+    list_filter = ('notification_type', 'is_read', 'is_sent', 'created_at')
+    search_fields = ('title', 'body', 'user__email', 'user__phone_number')
+    readonly_fields = ('created_at',)
+    raw_id_fields = ('user',)

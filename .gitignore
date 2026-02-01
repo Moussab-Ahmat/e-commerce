@@ -39,6 +39,12 @@ db.sqlite3-journal
 .env.local
 .env.*.local
 
+# Firebase credentials (NEVER commit)
+serviceAccountKey.json
+google-services.json
+GoogleService-Info.plist
+config/firebase/serviceAccountKey.json
+
 # IDE
 .vscode/
 .idea/

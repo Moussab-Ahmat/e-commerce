@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.admin_api',
     'apps.courier_api',
+    'apps.reports',
 ]
 
 MIDDLEWARE = [
@@ -236,3 +237,32 @@ NOTIFICATION_PROVIDER_CLASS = config(
     'NOTIFICATION_PROVIDER_CLASS',
     default='apps.notifications.providers.LoggingNotificationProvider'
 )
+
+# Firebase Cloud Messaging settings
+FIREBASE_CREDENTIALS_PATH = os.path.join(BASE_DIR, 'config', 'firebase', 'serviceAccountKey.json')
+
+# ── Email Configuration ──────────────────────────────────
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='MonEntreprise <noreply@monentreprise.com>')
+
+# ── Company Information (invoices) ───────────────────────
+COMPANY_NAME = config('COMPANY_NAME', default='MonEntreprise')
+COMPANY_ADDRESS = config('COMPANY_ADDRESS', default='123 Rue Principale')
+COMPANY_CITY = config('COMPANY_CITY', default="N'Djamena, Tchad")
+COMPANY_PHONE = config('COMPANY_PHONE', default='+235 XX XX XX XX')
+COMPANY_EMAIL = config('COMPANY_EMAIL', default='contact@monentreprise.com')
+COMPANY_LOGO_PATH = config('COMPANY_LOGO_PATH', default='')
+if COMPANY_LOGO_PATH and not os.path.isabs(COMPANY_LOGO_PATH):
+    COMPANY_LOGO_PATH = os.path.join(BASE_DIR, COMPANY_LOGO_PATH)
+
+# ── Invoice Settings ─────────────────────────────────────
+INVOICE_PRIMARY_COLOR = config('INVOICE_PRIMARY_COLOR', default='#1976D2')
+INVOICE_SECONDARY_COLOR = config('INVOICE_SECONDARY_COLOR', default='#4CAF50')
+
+# Auto-send invoice when order is delivered
+AUTO_SEND_INVOICE_ON_DELIVERY = config('AUTO_SEND_INVOICE_ON_DELIVERY', default=False, cast=bool)

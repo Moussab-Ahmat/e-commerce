@@ -82,7 +82,7 @@ class DeliveryViewSet(viewsets.ModelViewSet):
         delivery.zone = delivery.order.delivery_zone
         delivery.fee = delivery.order.delivery_fee
         delivery.transition_status(Delivery.DeliveryStatus.ASSIGNED, user=request.user)
-        
+
         # Log audit event
         log_audit_event(
             user=request.user,
@@ -92,7 +92,37 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             new_values={'agent_id': agent.agent_id, 'status': 'ASSIGNED'},
             request=request
         )
-        
+
+        # Push notifications
+        try:
+            from apps.notifications.push import send_push_notification
+            order = delivery.order
+
+            # Notify CLIENT: courier assigned
+            send_push_notification(
+                user_id=order.user_id,
+                title='Commande en preparation',
+                body=f'Un livreur a ete assigne a votre commande #{order.order_number}. Livraison prevue aujourd\'hui.',
+                notification_type='courier_assigned',
+                data={'type': 'courier_assigned', 'order_id': str(order.id)},
+            )
+
+            # Notify COURIER: new delivery assigned
+            customer_name = order.user.get_full_name()
+            send_push_notification(
+                user_id=agent.user_id,
+                title='Nouvelle livraison assignee',
+                body=f'Commande #{order.order_number} - Client: {customer_name} - Montant: {order.total} FCFA',
+                notification_type='delivery_assigned',
+                data={
+                    'type': 'delivery_assigned',
+                    'order_id': str(order.id),
+                    'delivery_id': str(delivery.id),
+                },
+            )
+        except Exception:
+            pass  # Don't fail assignment if notifications fail
+
         return Response(DeliverySerializer(delivery).data)
     
     @action(detail=True, methods=['post'])
@@ -117,11 +147,23 @@ class DeliveryViewSet(viewsets.ModelViewSet):
         try:
             old_status = delivery.status
             delivery.transition_status(new_status, user=request.user)
-            
+
             # If delivered, update order status
             if new_status == Delivery.DeliveryStatus.DELIVERED:
                 delivery.order.transition_status('DELIVERED', user=request.user)
-            
+
+                # Auto-send invoice if enabled
+                try:
+                    from django.conf import settings as app_settings
+                    if getattr(app_settings, 'AUTO_SEND_INVOICE_ON_DELIVERY', False):
+                        from apps.reports.invoice_generator import InvoiceGenerator
+                        from apps.reports.email_service import send_invoice_email
+                        gen = InvoiceGenerator()
+                        pdf_path = gen.generate_invoice(delivery.order_id)
+                        send_invoice_email(delivery.order_id, pdf_path)
+                except Exception:
+                    pass  # Don't block delivery status on invoice failure
+
             # Log audit event
             log_audit_event(
                 user=request.user,
@@ -132,7 +174,46 @@ class DeliveryViewSet(viewsets.ModelViewSet):
                 new_values={'status': new_status},
                 request=request
             )
-            
+
+            # Send push notifications based on new status
+            try:
+                from apps.notifications.push import send_push_notification
+                order = delivery.order
+                status_notifications = {
+                    Delivery.DeliveryStatus.PICKED_UP: {
+                        'title': 'Commande recuperee',
+                        'body': f'Votre livreur a recupere votre commande #{order.order_number} et se dirige vers vous.',
+                        'type': 'order_picked_up',
+                    },
+                    Delivery.DeliveryStatus.IN_TRANSIT: {
+                        'title': 'Livreur en route',
+                        'body': f'Votre livreur arrive dans environ 15 minutes !',
+                        'type': 'order_on_the_way',
+                    },
+                    Delivery.DeliveryStatus.DELIVERED: {
+                        'title': 'Commande livree',
+                        'body': f'Votre commande #{order.order_number} a ete livree. Merci pour votre achat !',
+                        'type': 'order_delivered',
+                    },
+                    Delivery.DeliveryStatus.FAILED: {
+                        'title': 'Echec de livraison',
+                        'body': f'La livraison de votre commande #{order.order_number} a echoue. Nous vous contacterons.',
+                        'type': 'order_cancelled',
+                    },
+                }
+
+                notif_data = status_notifications.get(new_status)
+                if notif_data:
+                    send_push_notification(
+                        user_id=order.user_id,
+                        title=notif_data['title'],
+                        body=notif_data['body'],
+                        notification_type=notif_data['type'],
+                        data={'type': notif_data['type'], 'order_id': str(order.id)},
+                    )
+            except Exception:
+                pass
+
             return Response(DeliverySerializer(delivery).data)
         except InvalidDeliveryStatusError as e:
             return Response(

@@ -118,6 +118,21 @@ class CourierDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
 
         try:
             delivery.transition_status(DeliveryStatus.IN_TRANSIT, user=request.user)
+
+            # Notify client: livreur en route
+            try:
+                from apps.notifications.push import send_push_notification
+                order = delivery.order
+                send_push_notification(
+                    user_id=order.user_id,
+                    title='Livreur en route',
+                    body=f'Votre livreur est en route avec votre commande #{order.order_number} !',
+                    notification_type='order_on_the_way',
+                    data={'type': 'order_on_the_way', 'order_id': str(order.id)},
+                )
+            except Exception:
+                pass
+
             return Response({
                 'message': 'Delivery started successfully',
                 'delivery': CourierDeliverySerializer(delivery, context={'request': request}).data
@@ -141,6 +156,33 @@ class CourierDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
 
         try:
             delivery.transition_status(DeliveryStatus.DELIVERED, user=request.user)
+
+            # Auto-send invoice if enabled
+            try:
+                from django.conf import settings as app_settings
+                if getattr(app_settings, 'AUTO_SEND_INVOICE_ON_DELIVERY', False):
+                    from apps.reports.invoice_generator import InvoiceGenerator
+                    from apps.reports.email_service import send_invoice_email
+                    gen = InvoiceGenerator()
+                    pdf_path = gen.generate_invoice(delivery.order_id)
+                    send_invoice_email(delivery.order_id, pdf_path)
+            except Exception:
+                pass  # Don't block delivery on invoice failure
+
+            # Notify client: commande livree
+            try:
+                from apps.notifications.push import send_push_notification
+                order = delivery.order
+                send_push_notification(
+                    user_id=order.user_id,
+                    title='Commande livree',
+                    body=f'Votre commande #{order.order_number} a ete livree. Merci pour votre achat !',
+                    notification_type='order_delivered',
+                    data={'type': 'order_delivered', 'order_id': str(order.id)},
+                )
+            except Exception:
+                pass
+
             return Response({
                 'message': 'Delivery marked as delivered successfully',
                 'delivery': CourierDeliverySerializer(delivery, context={'request': request}).data
